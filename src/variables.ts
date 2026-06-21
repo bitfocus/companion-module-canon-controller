@@ -1,15 +1,24 @@
 import type ModuleInstance from './main.js'
 
 export type VariablesSchema = {
-	variable1: string
-	variable2: string
-	variable3: string
+	current_camera: string
+	last_preset: string
+	tally_state: string
+	connection_status: string
 }
 
 export function UpdateVariableDefinitions(self: ModuleInstance): void {
 	self.setVariableDefinitions({
-		variable1: { name: 'My first variable' },
-		variable2: { name: 'My second variable' },
-		variable3: { name: 'Another variable' },
+		current_camera: { name: 'Current Camera' },
+		last_preset: { name: 'Last Preset Recalled' },
+		tally_state: { name: 'Tally State' },
+		connection_status: { name: 'Connection Status' },
+	})
+
+	self.setVariableValues({
+		current_camera: String(self.state.currentCamera),
+		last_preset: self.state.lastPreset !== null ? String(self.state.lastPreset) : '',
+		tally_state: self.state.tallyState,
+		connection_status: 'Disconnected',
 	})
 }
