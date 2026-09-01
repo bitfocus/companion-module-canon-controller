@@ -4,9 +4,16 @@ export type ModuleConfig = {
 	host: string
 	port: number
 	username: string
-	password: string
 	autoReconnect: boolean
 	pollingRate: number
+}
+
+/**
+ * Values from `secret-text` config fields. Companion keeps these in the secrets
+ * store rather than the config object, and hands them to the module separately.
+ */
+export type ModuleSecrets = {
+	password: string
 }
 
 export function GetConfigFields(): SomeCompanionConfigField[] {
@@ -39,7 +46,7 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			tooltip: 'Username configured on the Controller',
 		},
 		{
-			type: 'textinput',
+			type: 'secret-text',
 			id: 'password',
 			label: 'Password',
 			width: 6,
@@ -59,10 +66,14 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			id: 'pollingRate',
 			label: 'Polling Rate (ms)',
 			width: 8,
-			min: 500,
+			min: 1000,
 			max: 30000,
 			default: 5000,
-			tooltip: 'How often to poll the Controller for status updates (milliseconds)',
+			tooltip:
+				'How often to poll the Controller for status updates (milliseconds). ' +
+				'The Controller takes around 300ms to answer and handles one request at a time, ' +
+				'so polling faster than about 1 second delays the commands you send rather than ' +
+				'reporting changes any sooner.',
 		},
 	]
 }
