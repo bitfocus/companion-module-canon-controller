@@ -5,7 +5,7 @@
 	"name": "Canon Camera Controller",
 	"shortname": "canon-controller",
 	"description": "Control Canon PTZ camera controllers (like the RC-IP1000) over IP using the XC Protocol",
-	"version": "0.1.0",
+	"version": "0.0.0",
 	"license": "MIT",
 	"repository": "git+https://github.com/bitfocus/companion-module-canon-controller.git",
 	"bugs": "https://github.com/bitfocus/companion-module-canon-controller/issues",
