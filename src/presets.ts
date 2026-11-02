@@ -2,8 +2,23 @@ import { combineRgb } from '@companion-module/base'
 import type { CompanionPresetDefinitions, CompanionPresetSection } from '@companion-module/base'
 import type { ModuleSchema } from './main.js'
 import type ModuleInstance from './main.js'
+import { functionButtonChoices, functionButtonRangeLabel } from './choices.js'
+
+/** Starter buttons offered for cameras and presets, out of the much larger ranges both allow */
+const STARTER_BUTTON_COUNT = 10
+
+/** The preset-recall defaults, spelled out so a dropped-in button sends a plain `p=<n>` */
+const PLAIN_RECALL_OPTIONS = {
+	target_camera: 0,
+	speed_mode: 'default',
+	ptzspeed: 50,
+	ptztime: 5000,
+	freeze: 'default',
+}
 
 export function UpdatePresets(self: ModuleInstance): void {
+	const functionButtons = functionButtonChoices(self)
+
 	const structure: CompanionPresetSection[] = [
 		{
 			id: 'cameras',
@@ -12,9 +27,9 @@ export function UpdatePresets(self: ModuleInstance): void {
 				{
 					id: 'cam_select',
 					name: 'Camera Select',
-					description: 'Switch the active camera on the RC-IP1000',
+					description: 'Switch the active camera on the controller',
 					type: 'simple',
-					presets: Array.from({ length: 10 }, (_, i) => `select_camera_${i + 1}`),
+					presets: Array.from({ length: STARTER_BUTTON_COUNT }, (_, i) => `select_camera_${i + 1}`),
 				},
 			],
 		},
@@ -27,7 +42,14 @@ export function UpdatePresets(self: ModuleInstance): void {
 					name: 'Preset Recall',
 					description: 'Recall a stored preset on the active camera',
 					type: 'simple',
-					presets: Array.from({ length: 10 }, (_, i) => `recall_preset_${i + 1}`),
+					presets: Array.from({ length: STARTER_BUTTON_COUNT }, (_, i) => `recall_preset_${i + 1}`),
+				},
+				{
+					id: 'preset_stop',
+					name: 'Stop Preset Move',
+					description: 'Interrupt a preset move already under way',
+					type: 'simple',
+					presets: ['stop_preset_move'],
 				},
 			],
 		},
@@ -38,9 +60,9 @@ export function UpdatePresets(self: ModuleInstance): void {
 				{
 					id: 'fn_buttons',
 					name: 'Function Buttons',
-					description: 'Trigger assignable function buttons F1–F10',
+					description: `Trigger assignable function buttons ${functionButtonRangeLabel(self)}`,
 					type: 'simple',
-					presets: Array.from({ length: 10 }, (_, i) => `function_button_${i + 1}`),
+					presets: functionButtons.map((choice) => `function_button_${choice.id}`),
 				},
 			],
 		},
@@ -53,7 +75,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 					name: 'Tally Control',
 					description: 'Set the tally lamp state on the active camera',
 					type: 'simple',
-					presets: ['tally_off', 'tally_on', 'tally_flash'],
+					presets: ['tally_off', 'tally_program', 'tally_preview'],
 				},
 			],
 		},
@@ -61,7 +83,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 
 	const presets: CompanionPresetDefinitions<ModuleSchema> = {}
 
-	for (let i = 1; i <= 10; i++) {
+	for (let i = 1; i <= STARTER_BUTTON_COUNT; i++) {
 		presets[`select_camera_${i}`] = {
 			type: 'simple',
 			name: `Camera ${i}`,
@@ -91,7 +113,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 		}
 	}
 
-	for (let i = 1; i <= 10; i++) {
+	for (let i = 1; i <= STARTER_BUTTON_COUNT; i++) {
 		presets[`recall_preset_${i}`] = {
 			type: 'simple',
 			name: `Preset ${i}`,
@@ -104,7 +126,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 			},
 			steps: [
 				{
-					down: [{ actionId: 'recall_preset', options: { preset: i } }],
+					down: [{ actionId: 'recall_preset', options: { preset: i, ...PLAIN_RECALL_OPTIONS } }],
 					up: [],
 				},
 			],
@@ -121,12 +143,31 @@ export function UpdatePresets(self: ModuleInstance): void {
 		}
 	}
 
-	for (let i = 1; i <= 10; i++) {
-		presets[`function_button_${i}`] = {
+	presets['stop_preset_move'] = {
+		type: 'simple',
+		name: 'Stop Preset Move',
+		style: {
+			text: 'PRESET\nSTOP',
+			size: 'auto',
+			color: combineRgb(255, 255, 255),
+			bgcolor: combineRgb(96, 32, 32),
+			show_topbar: false,
+		},
+		steps: [
+			{
+				down: [{ actionId: 'stop_preset_move', options: { target_camera: 0 } }],
+				up: [],
+			},
+		],
+		feedbacks: [],
+	}
+
+	for (const choice of functionButtons) {
+		presets[`function_button_${choice.id}`] = {
 			type: 'simple',
-			name: `F${i}`,
+			name: choice.label,
 			style: {
-				text: `F${i}`,
+				text: choice.label,
 				size: 'auto',
 				color: combineRgb(255, 255, 255),
 				bgcolor: combineRgb(64, 0, 128),
@@ -134,14 +175,14 @@ export function UpdatePresets(self: ModuleInstance): void {
 			},
 			steps: [
 				{
-					down: [{ actionId: 'press_function_button', options: { button: i } }],
+					down: [{ actionId: 'press_function_button', options: { button: choice.id } }],
 					up: [],
 				},
 			],
 			feedbacks: [
 				{
 					feedbackId: 'function_button_status',
-					options: { button: i },
+					options: { button: choice.id },
 					style: {
 						bgcolor: combineRgb(255, 128, 0),
 						color: combineRgb(0, 0, 0),
@@ -163,7 +204,7 @@ export function UpdatePresets(self: ModuleInstance): void {
 		},
 		steps: [
 			{
-				down: [{ actionId: 'set_tally', options: { state: 'off' } }],
+				down: [{ actionId: 'set_tally', options: { state: 'off', target_camera: 0 } }],
 				up: [],
 			},
 		],
@@ -179,11 +220,11 @@ export function UpdatePresets(self: ModuleInstance): void {
 		],
 	}
 
-	presets['tally_on'] = {
+	presets['tally_program'] = {
 		type: 'simple',
-		name: 'Tally On',
+		name: 'Tally Program',
 		style: {
-			text: 'TALLY\nON',
+			text: 'TALLY\nPGM',
 			size: 'auto',
 			color: combineRgb(255, 255, 255),
 			bgcolor: combineRgb(128, 0, 0),
@@ -191,14 +232,14 @@ export function UpdatePresets(self: ModuleInstance): void {
 		},
 		steps: [
 			{
-				down: [{ actionId: 'set_tally', options: { state: 'on' } }],
+				down: [{ actionId: 'set_tally', options: { state: 'program', target_camera: 0 } }],
 				up: [],
 			},
 		],
 		feedbacks: [
 			{
 				feedbackId: 'tally_state',
-				options: { state: 'on' },
+				options: { state: 'program' },
 				style: {
 					bgcolor: combineRgb(255, 0, 0),
 					color: combineRgb(255, 255, 255),
@@ -207,28 +248,28 @@ export function UpdatePresets(self: ModuleInstance): void {
 		],
 	}
 
-	presets['tally_flash'] = {
+	presets['tally_preview'] = {
 		type: 'simple',
-		name: 'Tally Flash',
+		name: 'Tally Preview',
 		style: {
-			text: 'TALLY\nFLASH',
+			text: 'TALLY\nPVW',
 			size: 'auto',
 			color: combineRgb(255, 255, 255),
-			bgcolor: combineRgb(128, 64, 0),
+			bgcolor: combineRgb(0, 96, 32),
 			show_topbar: false,
 		},
 		steps: [
 			{
-				down: [{ actionId: 'set_tally', options: { state: 'flash' } }],
+				down: [{ actionId: 'set_tally', options: { state: 'preview', target_camera: 0 } }],
 				up: [],
 			},
 		],
 		feedbacks: [
 			{
 				feedbackId: 'tally_state',
-				options: { state: 'flash' },
+				options: { state: 'preview' },
 				style: {
-					bgcolor: combineRgb(255, 128, 0),
+					bgcolor: combineRgb(0, 200, 0),
 					color: combineRgb(0, 0, 0),
 				},
 			},

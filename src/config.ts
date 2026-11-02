@@ -43,7 +43,9 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			label: 'Username',
 			width: 6,
 			default: '',
-			tooltip: 'Username configured on the Controller',
+			tooltip:
+				'Username configured on the Controller itself. The Controller refuses every command with ' +
+				'405 Method Not Allowed until a username and password exist on the device.',
 		},
 		{
 			type: 'secret-text',

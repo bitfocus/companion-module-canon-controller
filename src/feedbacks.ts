@@ -1,5 +1,6 @@
 import { combineRgb } from '@companion-module/base'
 import type ModuleInstance from './main.js'
+import { functionButtonChoices, TALLY_STATE_CHOICES } from './choices.js'
 
 export type FeedbacksSchema = {
 	connection_status: {
@@ -32,22 +33,20 @@ export type FeedbacksSchema = {
 	}
 }
 
-const FUNCTION_BUTTON_CHOICES = Array.from({ length: 10 }, (_, i) => ({
-	id: i + 1,
-	label: `F${i + 1}`,
-}))
-
-const TALLY_STATE_CHOICES = [
-	{ id: 'off', label: 'Off' },
-	{ id: 'on', label: 'On (Program)' },
-	{ id: 'flash', label: 'Flash (Preview)' },
-]
+/**
+ * `info.cgi` on these controllers answers with four values and nothing else: `camno`,
+ * `camno.count`, `f.assign.min` and `f.assign.max`. Preset, function button and tally
+ * state are never reported back, so the three feedbacks below can only show what this
+ * module last sent. Anyone touching the controller's own panel, or a second Companion
+ * instance, will leave them stale, and their descriptions say so.
+ */
+const UNREPORTED_STATE_NOTE = 'The controller does not report this, so it reflects what Companion last sent'
 
 export function UpdateFeedbacks(self: ModuleInstance): void {
 	self.setFeedbackDefinitions({
 		connection_status: {
 			name: 'Connection Status',
-			description: 'Active when the RC-IP1000 is online and responding',
+			description: 'Active when the controller is online and responding',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: combineRgb(0, 200, 0),
@@ -59,7 +58,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 
 		current_camera: {
 			name: 'Current Camera',
-			description: 'Active when the specified camera is currently selected on the RC-IP1000',
+			description: 'Active when the specified camera is currently selected on the controller',
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: combineRgb(255, 255, 0),
@@ -72,15 +71,15 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 					label: 'Camera Number',
 					default: 1,
 					min: 1,
-					max: 200,
+					max: self.state.cameraCount,
 				},
 			],
 			callback: (feedback) => self.state.currentCamera === feedback.options.camera,
 		},
 
 		active_preset: {
-			name: 'Active Preset',
-			description: 'Active when the specified preset was most recently recalled',
+			name: 'Last Preset Recalled',
+			description: `Active when this module last recalled the specified preset. ${UNREPORTED_STATE_NOTE}, not which preset the camera is actually on.`,
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: combineRgb(0, 0, 255),
@@ -100,8 +99,8 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 		},
 
 		function_button_status: {
-			name: 'Function Button Status',
-			description: 'Active when the specified function button was most recently pressed',
+			name: 'Last Function Button Pressed',
+			description: `Active when this module last pressed the specified function button. ${UNREPORTED_STATE_NOTE}, so a press on the controller's own panel will not show here.`,
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: combineRgb(255, 128, 0),
@@ -112,16 +111,16 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 					id: 'button',
 					type: 'dropdown',
 					label: 'Function Button',
-					default: 1,
-					choices: FUNCTION_BUTTON_CHOICES,
+					default: self.state.assignMin,
+					choices: functionButtonChoices(self),
 				},
 			],
 			callback: (feedback) => self.state.lastFunctionButton === feedback.options.button,
 		},
 
 		tally_state: {
-			name: 'Tally State',
-			description: 'Active when the tally lamp is in the specified state',
+			name: 'Last Tally State Set',
+			description: `Active when this module last set the specified tally state. ${UNREPORTED_STATE_NOTE}, not the state of the lamp itself.`,
 			type: 'boolean',
 			defaultStyle: {
 				bgcolor: combineRgb(255, 0, 0),
@@ -132,7 +131,7 @@ export function UpdateFeedbacks(self: ModuleInstance): void {
 					id: 'state',
 					type: 'dropdown',
 					label: 'Tally State',
-					default: 'on',
+					default: 'program',
 					choices: TALLY_STATE_CHOICES,
 				},
 			],

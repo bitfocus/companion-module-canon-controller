@@ -6,6 +6,7 @@ import { UpdateActions, type ActionsSchema } from './actions.js'
 import { UpdateFeedbacks, type FeedbacksSchema } from './feedbacks.js'
 import { UpdatePresets } from './presets.js'
 import { buildDigestAuthHeader, parseDigestChallenge, type DigestChallenge } from './digest.js'
+import type { TallyState } from './choices.js'
 
 export type ModuleSchema = {
 	config: ModuleConfig
@@ -34,6 +35,15 @@ const COMMAND_REFRESH_DEBOUNCE_MS = 100
 /** How many freshly issued challenges must be refused before we blame the credentials */
 const AUTH_FAILURES_BEFORE_BAD_CONFIG = 3
 
+/**
+ * The RC-IP1000 and RC-IP300 answer info.cgi and control.cgi with `405 Method Not Allowed`
+ * when no username and password have been set up on the controller itself. The code means
+ * nothing of the sort anywhere else in the protocol, and nothing in Companion can fix it,
+ * so it gets its own message rather than being reported as an HTTP failure.
+ */
+const NO_DEVICE_CREDENTIALS_MESSAGE =
+	'The controller has no username and password configured. Set them on the controller itself, then enter them here.'
+
 export interface DeviceState {
 	currentCamera: number
 	cameraCount: number
@@ -41,7 +51,7 @@ export interface DeviceState {
 	assignMax: number
 	lastPreset: number | null
 	lastFunctionButton: number | null
-	tallyState: 'off' | 'on' | 'flash'
+	tallyState: TallyState
 	connected: boolean
 }
 
@@ -49,6 +59,11 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 	config!: ModuleConfig
 	secrets!: ModuleSecrets
 
+	/**
+	 * Opening guesses only. `camno.count`, `f.assign.min` and `f.assign.max` are all
+	 * device-reported, and the first poll replaces them: an RC-IP1000 reports 10 function
+	 * buttons and an RC-IP300 reports 12.
+	 */
 	state: DeviceState = {
 		currentCamera: 1,
 		cameraCount: 200,
@@ -120,6 +135,15 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 	updateVariableDefinitions(): void {
 		UpdateVariableDefinitions(this)
+	}
+
+	/**
+	 * Whether a `camno.target` of `target` lands on the camera the controller currently has
+	 * selected, 0 meaning "whichever that is". Only then does the command say anything about
+	 * the state this module tracks, which is always the selected camera's.
+	 */
+	actsOnSelectedCamera(target: number): boolean {
+		return target <= 0 || target === this.state.currentCamera
 	}
 
 	private buildBaseUrl(): string {
@@ -226,12 +250,13 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			const { response, credentialsRejected } = await this.authenticatedFetch(url)
 			await discardBody(response)
 			if (!response.ok) {
-				this.log(
-					'warn',
-					credentialsRejected
-						? `Control command rejected: invalid username or password for ${params}`
-						: `Control command failed: HTTP ${response.status} for ${params}`,
-				)
+				if (response.status === 405) {
+					this.log('warn', `Control command refused for ${params}. ${NO_DEVICE_CREDENTIALS_MESSAGE}`)
+				} else if (credentialsRejected) {
+					this.log('warn', `Control command rejected: invalid username or password for ${params}`)
+				} else {
+					this.log('warn', `Control command failed: HTTP ${response.status} for ${params}`)
+				}
 				return false
 			}
 			// The command changed something, so pick it up now rather than at the next tick
@@ -285,6 +310,21 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 		}, COMMAND_REFRESH_DEBOUNCE_MS)
 	}
 
+	/**
+	 * Give up on something reconnecting cannot fix — credentials this module got wrong, or
+	 * credentials the controller itself is missing. Unlike a connection failure there is
+	 * nothing to retry, so polling stops until the configuration changes.
+	 */
+	private failConfig(message: string, statusText: string): void {
+		if (this.state.connected) {
+			this.state.connected = false
+			this.checkFeedbacks('connection_status')
+		}
+		this.updateStatus(InstanceStatus.BadConfig, message)
+		this.setVariableValues({ connection_status: statusText })
+		this.stopPolling()
+	}
+
 	private async poll(): Promise<void> {
 		// Requests take their turn, so a slow one must not let polls stack up behind it
 		if (this.pollInFlight) return
@@ -297,10 +337,15 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			//any other 401 is the Controller expiring its nonce, which the next poll re-authenticates through
 			if (credentialsRejected) {
 				await discardBody(response)
-				this.updateStatus(InstanceStatus.BadConfig, 'Invalid username or password')
-				this.setVariableValues({ connection_status: 'Invalid Login' })
-				this.stopPolling()
-				throw new Error('Invalid username or password')
+				this.failConfig('Invalid username or password', 'Invalid Login')
+				return
+			}
+
+			// Unique to these controllers: nothing works until credentials exist on the device
+			if (response.status === 405) {
+				await discardBody(response)
+				this.failConfig(NO_DEVICE_CREDENTIALS_MESSAGE, 'No Device Credentials')
+				return
 			}
 
 			if (!response.ok) {
@@ -344,6 +389,10 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 			this.checkFeedbacks('current_camera')
 		}
 
+		const previousCameraCount = this.state.cameraCount
+		const previousAssignMin = this.state.assignMin
+		const previousAssignMax = this.state.assignMax
+
 		const cameraCount = parseInt(parsed['camno.count'] ?? '', 10)
 		if (!isNaN(cameraCount)) this.state.cameraCount = cameraCount
 
@@ -352,6 +401,19 @@ export default class ModuleInstance extends InstanceBase<ModuleSchema> {
 
 		const assignMax = parseInt(parsed['f.assign.max'] ?? '', 10)
 		if (!isNaN(assignMax)) this.state.assignMax = assignMax
+
+		// Actions, feedbacks and presets are all shaped by these ranges, and the ranges are
+		// only known once the controller has answered. The first poll of an RC-IP300 raises
+		// the function buttons from the assumed 10 to its actual 12, so rebuild on a change.
+		if (
+			this.state.cameraCount !== previousCameraCount ||
+			this.state.assignMin !== previousAssignMin ||
+			this.state.assignMax !== previousAssignMax
+		) {
+			this.updateActions()
+			this.updateFeedbacks()
+			this.updatePresets()
+		}
 
 		this.setVariableValues({ connection_status: 'Connected' })
 	}
