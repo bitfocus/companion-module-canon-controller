@@ -4,8 +4,6 @@ Controls the Canon RC-IP1000 and RC-IP300 remote camera controllers over their H
 
 The two controllers share one command set. The module asks the controller what it is capable of rather than asking you which one you have, so there is no model to pick: an RC-IP300 reports 12 function buttons where an RC-IP1000 reports 10, and the action and preset lists resize themselves on the first poll.
 
-Tested against RC-IP1000 firmware 1.3.0 and RC-IP300 firmware 1.0.0.
-
 ## Configuration
 
 | Field             | Default | Description                                             |
